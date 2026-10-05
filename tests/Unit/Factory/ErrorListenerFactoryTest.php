@@ -4,275 +4,287 @@ declare(strict_types=1);
 
 namespace Contenir\Errors\Laminas\Mvc\Tests\Unit\Factory;
 
-use Contenir\Errors\ErrorPage;
 use Contenir\Errors\ErrorPageRepositoryInterface;
 use Contenir\Errors\Laminas\Mvc\ConfigProvider;
 use Contenir\Errors\Laminas\Mvc\Factory\ErrorListenerFactory;
 use Contenir\Errors\Laminas\Mvc\Listener\ErrorListener;
-use Contenir\Errors\Laminas\Mvc\Tests\Unit\Factory\Stub\ArrayContainer;
-use Contenir\Errors\Repository\InMemoryRepository;
-use Laminas\Http\Request as HttpRequest;
-use Laminas\Http\Response as HttpResponse;
+use Contenir\Errors\Laminas\Mvc\Tests\TestAsset\Container\InMemoryContainer;
+use Contenir\Errors\Laminas\Mvc\Tests\Trait\MvcEventTrait;
 use Laminas\Mvc\MvcEvent;
+use Laminas\View\Model\ViewModel;
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
-use Psr\Log\NullLogger;
 use RuntimeException;
+use stdClass;
 
+#[CoversClass(ErrorListenerFactory::class)]
 #[Group('unit')]
 #[Group('factory')]
 final class ErrorListenerFactoryTest extends TestCase
 {
-    public function testBuildsListenerWithRepositoryFromContainer(): void
+    use MvcEventTrait;
+
+    /**
+     * @return array<string, array{mixed}>
+     */
+    public static function fallbackTemplateProvider(): array
     {
-        $container = $this->container([], $this->repo());
-
-        $listener = (new ErrorListenerFactory())($container);
-
-        self::assertInstanceOf(ErrorListener::class, $listener);
+        return [
+            'null'         => [null],
+            'empty string' => [''],
+            'not a string' => [['site/error']],
+        ];
     }
 
-    public function testFallsBackToDefaultViewTemplateWhenConfigOmitsIt(): void
+    /**
+     * @return array<string, array{mixed, string}>
+     */
+    public static function fieldValueProvider(): array
     {
-        $container = $this->container([], $this->repo());
-
-        $listener = (new ErrorListenerFactory())($container);
-
-        $event = $this->eventWith(404);
-        $listener($event);
-        self::assertSame('contenir/errors/fault', $event->getResult()->getTemplate());
+        return [
+            'string'  => ['Lost', 'Lost'],
+            'integer' => [404, '404'],
+            'true'    => [true, '1'],
+            'null'    => [null, ''],
+            'array'   => [['nested'], ''],
+            'object'  => [new stdClass(), ''],
+        ];
     }
 
-    public function testAppliesConfiguredViewTemplate(): void
+    /**
+     * @return array<string, array{mixed, string}>
+     */
+    public static function invalidLoggerProvider(): array
     {
-        $container = $this->container(['view_template' => 'site/custom-error'], $this->repo());
-
-        $listener = (new ErrorListenerFactory())($container);
-
-        $event = $this->eventWith(404);
-        $listener($event);
-        self::assertSame('site/custom-error', $event->getResult()->getTemplate());
+        return [
+            'integer'      => [42, 'config[errors][logger] must be null'],
+            'empty string' => ['', 'config[errors][logger] must be null'],
+            'array'        => [['log.psr3'], 'config[errors][logger] must be null'],
+        ];
     }
 
-    public function testWiresLoggerInstanceDirectly(): void
+    /**
+     * @return array<string, array{array<string, mixed>}>
+     */
+    public static function unusableConfigProvider(): array
     {
-        $logger = new NullLogger();
-        $container = $this->container(['logger' => $logger], $this->repo());
-
-        // No throw, listener built.
-        $listener = (new ErrorListenerFactory())($container);
-
-        self::assertInstanceOf(ErrorListener::class, $listener);
+        return [
+            'no config service'      => [[]],
+            'config is not an array' => [['config' => 'oops']],
+            'errors key missing'     => [['config' => []]],
+            'errors is not an array' => [['config' => ['errors' => 'oops']]],
+            'errors is null'         => [['config' => ['errors' => null]]],
+            'pages is not an array'  => [['config' => ['errors' => ['pages' => 'oops']]]],
+        ];
     }
 
-    public function testResolvesLoggerByServiceId(): void
+    /**
+     * @param array<array-key, mixed> $pages
+     */
+    private static function buildWithoutRepository(array $pages): ErrorListener
     {
-        $logger = new NullLogger();
-        $container = new ArrayContainer([
-            'config' => ['errors' => ['logger' => 'log.psr3']],
-            ErrorPageRepositoryInterface::class => $this->repo(),
-            'log.psr3' => $logger,
-        ]);
-
-        $listener = (new ErrorListenerFactory())($container);
-
-        self::assertInstanceOf(ErrorListener::class, $listener);
+        return (new ErrorListenerFactory())(new InMemoryContainer(['config' => ['errors' => ['pages' => $pages]]]));
     }
 
-    public function testThrowsWhenResolvedLoggerServiceDoesNotImplementLoggerInterface(): void
+    private static function template(MvcEvent $event): ?string
     {
-        $container = new ArrayContainer([
-            'config' => ['errors' => ['logger' => 'not-a-logger']],
-            ErrorPageRepositoryInterface::class => $this->repo(),
-            'not-a-logger' => new \stdClass(),
-        ]);
+        $result = $event->getResult();
 
-        $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('must implement Psr\Log\LoggerInterface');
-
-        (new ErrorListenerFactory())($container);
+        return $result instanceof ViewModel ? $result->getTemplate() : null;
     }
 
-    public function testThrowsWhenLoggerConfigIsInvalidType(): void
+    private static function variable(MvcEvent $event, string $name): mixed
     {
-        $container = $this->container(['logger' => 42], $this->repo());
+        $result = $event->getResult();
 
-        $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('config[errors][logger]');
-
-        (new ErrorListenerFactory())($container);
+        return $result instanceof ViewModel ? $result->getVariable($name) : null;
     }
 
-    public function testThrowsWhenLoggerConfigIsEmptyString(): void
+    #[Test]
+    public function adminPagesOverrideOnlyTheirOwnStatus(): void
     {
-        $container = $this->container(['logger' => ''], $this->repo());
+        $listener = self::buildWithoutRepository([404 => ['title' => 'Site 404', 'body' => '<p>site</p>']]);
+        $notFound = self::eventWith(404);
+        $broken   = self::eventWith(500);
 
-        $this->expectException(RuntimeException::class);
+        $listener($notFound);
+        $listener($broken);
 
-        (new ErrorListenerFactory())($container);
-    }
-
-    public function testWorksWhenContainerHasNoConfig(): void
-    {
-        $container = new ArrayContainer([
-            ErrorPageRepositoryInterface::class => $this->repo(),
-        ]);
-
-        $listener = (new ErrorListenerFactory())($container);
-
-        self::assertInstanceOf(ErrorListener::class, $listener);
-    }
-
-    public function testBuildsInMemoryRepositoryFromConfigPagesWhenNoServiceRegistered(): void
-    {
-        // Site doesn't register ErrorPageRepositoryInterface — factory falls
-        // back to building one from the merged config (Laminas auto-merges
-        // config/autoload/errors.local.php into $config['errors']['pages']).
-        $container = new ArrayContainer([
-            'config' => [
-                'errors' => [
-                    'pages' => [
-                        404 => ['title' => 'Lost', 'body' => '<p>x</p>'],
-                        500 => ['title' => 'Boom', 'body' => ''],
-                    ],
-                ],
-            ],
-        ]);
-
-        $listener = (new ErrorListenerFactory())($container);
-        $event    = $this->eventWith(404);
-        $listener($event);
-
-        self::assertSame('Lost', $event->getResult()->getVariable('title'));
-        self::assertSame('<p>x</p>', $event->getResult()->getVariable('body'));
-    }
-
-    public function testFallbackRepositoryDoesNotInterceptStatusOutsideDefaultsAndConfig(): void
-    {
-        // 418 isn't in ConfigProvider::DEFAULT_PAGES and isn't admin-configured.
-        $container = new ArrayContainer([
-            'config' => [
-                'errors' => [
-                    'pages' => [
-                        404 => ['title' => 'Lost', 'body' => ''],
-                    ],
-                ],
-            ],
-        ]);
-
-        $listener = (new ErrorListenerFactory())($container);
-        $event    = $this->eventWith(418);
-        $listener($event);
-
-        self::assertNull($event->getResult(), 'Statuses outside seeded defaults and admin config pass through.');
-    }
-
-    public function testFallbackRepositorySeedsBuiltInDefaultsWhenNoAdminPagesConfigured(): void
-    {
-        // No admin pages at all — the listener should still render the
-        // package default for any status in ConfigProvider::DEFAULT_PAGES.
-        $container = new ArrayContainer(['config' => ['errors' => []]]);
-
-        $listener = (new ErrorListenerFactory())($container);
-        $event    = $this->eventWith(404);
-        $listener($event);
-
-        self::assertSame(
-            ConfigProvider::DEFAULT_PAGES[404]['title'],
-            $event->getResult()->getVariable('title'),
-        );
-        self::assertSame(
-            ConfigProvider::DEFAULT_PAGES[404]['body'],
-            $event->getResult()->getVariable('body'),
+        static::assertSame(
+            ['Site 404', ConfigProvider::DEFAULT_PAGES[500]['title']],
+            [self::variable($notFound, 'title'), self::variable($broken, 'title')],
         );
     }
 
-    public function testAdminPagesOverridePackageDefaultsPerStatus(): void
+    #[Test]
+    public function appliesTheConfiguredViewTemplate(): void
     {
-        // 404 is admin-configured (should win); 500 is left to defaults.
-        $container = new ArrayContainer([
-            'config' => [
-                'errors' => [
-                    'pages' => [
-                        404 => ['title' => 'Site 404', 'body' => '<p>site</p>'],
-                    ],
-                ],
-            ],
-        ]);
+        $event = self::eventWith(404);
 
-        $listener = (new ErrorListenerFactory())($container);
+        $this->build(['view_template' => 'site/custom-error'])($event);
 
-        $event404 = $this->eventWith(404);
-        $listener($event404);
-        self::assertSame('Site 404', $event404->getResult()->getVariable('title'));
+        static::assertSame('site/custom-error', self::template($event));
+    }
 
-        $event500 = $this->eventWith(500);
-        $listener($event500);
-        self::assertSame(
-            ConfigProvider::DEFAULT_PAGES[500]['title'],
-            $event500->getResult()->getVariable('title'),
+    #[Test]
+    public function buildsPagesFromConfigWhenNoRepositoryServiceIsRegistered(): void
+    {
+        $event = self::eventWith(404);
+
+        self::buildWithoutRepository([404 => ['title' => 'Lost', 'body' => '<p>x</p>']])($event);
+
+        static::assertSame(['Lost', '<p>x</p>'], [self::variable($event, 'title'), self::variable($event, 'body')]);
+    }
+
+    #[Test]
+    #[DataProvider('unusableConfigProvider')]
+    public function fallsBackToThePackageDefaultsWhenConfigIsUnusable(array $services): void
+    {
+        $event = self::eventWith(404);
+
+        (new ErrorListenerFactory())(new InMemoryContainer($services))($event);
+
+        static::assertSame(
+            ['contenir/errors/fault', ConfigProvider::DEFAULT_PAGES[404]['title']],
+            [self::template($event), self::variable($event, 'title')],
         );
     }
 
-    public function testFallbackRepositorySkipsRowsWithNonIntegerKeys(): void
+    #[Test]
+    #[DataProvider('fallbackTemplateProvider')]
+    public function fallsBackToTheShippedTemplateWhenTheConfiguredOneIsUnusable(mixed $template): void
     {
-        $container = new ArrayContainer([
-            'config' => [
-                'errors' => [
-                    'pages' => [
-                        'oops'  => ['title' => 'Bad', 'body' => ''],
-                        404 => ['title' => 'Lost', 'body' => ''],
-                    ],
-                ],
-            ],
-        ]);
+        $event = self::eventWith(404);
 
-        $listener = (new ErrorListenerFactory())($container);
-        $event    = $this->eventWith(404);
-        $listener($event);
+        $this->build(['view_template' => $template])($event);
 
-        self::assertSame('Lost', $event->getResult()->getVariable('title'));
+        static::assertSame('contenir/errors/fault', self::template($event));
     }
 
-    public function testCustomLoggerInstanceReceivesLogCalls(): void
+    #[Test]
+    public function ignoresMalformedAdminRowsAndKeepsTheDefault(): void
+    {
+        $event = self::eventWith(404);
+
+        self::buildWithoutRepository(['oops' => ['title' => 'Bad', 'body' => ''], 404 => 'not a row'])($event);
+
+        static::assertSame(ConfigProvider::DEFAULT_PAGES[404]['title'], self::variable($event, 'title'));
+    }
+
+    #[Test]
+    public function ignoresStatusesOutsideTheDefaultsAndConfig(): void
+    {
+        $event = self::eventWith(418);
+
+        self::buildWithoutRepository([404 => ['title' => 'Lost', 'body' => '']])($event);
+
+        static::assertNull($event->getResult());
+    }
+
+    #[Test]
+    public function passesALoggerInstanceStraightThrough(): void
     {
         $logger = $this->createMock(LoggerInterface::class);
         $logger->expects($this->once())->method('info');
 
-        $container = $this->container(['logger' => $logger], $this->repo());
-
-        $listener = (new ErrorListenerFactory())($container);
-        $listener($this->eventWith(404));
+        $this->build(['logger' => $logger])(self::eventWith(404));
     }
 
-    private function repo(): InMemoryRepository
+    #[Test]
+    #[DataProvider('fieldValueProvider')]
+    public function readsAdminFieldsAsStrings(mixed $value, string $expected): void
     {
-        return new InMemoryRepository([new ErrorPage(404, 'Not found', '<p>Lost.</p>')]);
+        $event = self::eventWith(418);
+
+        self::buildWithoutRepository([418 => ['title' => $value, 'body' => '<p>x</p>']])($event);
+
+        static::assertSame($expected, self::variable($event, 'title'));
+    }
+
+    #[Test]
+    public function readsMissingAdminFieldsAsEmptyStrings(): void
+    {
+        $event = self::eventWith(418);
+
+        self::buildWithoutRepository([418 => ['title' => 'Teapot']])($event);
+
+        static::assertSame('', self::variable($event, 'body'));
+    }
+
+    #[Test]
+    #[DataProvider('invalidLoggerProvider')]
+    public function rejectsALoggerConfigOfTheWrongType(mixed $logger, string $message): void
+    {
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage($message);
+
+        $this->build(['logger' => $logger]);
+    }
+
+    #[Test]
+    public function rejectsALoggerServiceThatIsNotAPsrLogger(): void
+    {
+        $container = new InMemoryContainer([
+            'config'                            => ['errors' => ['logger' => 'not-a-logger']],
+            ErrorPageRepositoryInterface::class => self::repositoryWith404(),
+            'not-a-logger'                      => new stdClass(),
+        ]);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('logger service "not-a-logger" must implement Psr\Log\LoggerInterface');
+
+        (new ErrorListenerFactory())($container);
+    }
+
+    #[Test]
+    public function resolvesTheLoggerByServiceId(): void
+    {
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('info');
+        $container = new InMemoryContainer([
+            'config'                            => ['errors' => ['logger' => 'log.psr3']],
+            ErrorPageRepositoryInterface::class => self::repositoryWith404(),
+            'log.psr3'                          => $logger,
+        ]);
+
+        (new ErrorListenerFactory())($container)(self::eventWith(404));
+    }
+
+    #[Test]
+    public function seedsTheBuiltInDefaultsWhenNoAdminPagesAreConfigured(): void
+    {
+        $event = self::eventWith(500);
+
+        self::buildWithoutRepository([])($event);
+
+        static::assertSame(
+            [ConfigProvider::DEFAULT_PAGES[500]['title'], ConfigProvider::DEFAULT_PAGES[500]['body']],
+            [self::variable($event, 'title'), self::variable($event, 'body')],
+        );
+    }
+
+    #[Test]
+    public function usesARegisteredRepositoryService(): void
+    {
+        $event = self::eventWith(404);
+
+        $this->build(['pages' => [404 => ['title' => 'From config', 'body' => '']]])($event);
+
+        static::assertSame('Not found', self::variable($event, 'title'));
     }
 
     /**
-     * @param array<string, mixed> $errorsConfig
+     * @param array<string, mixed> $errors
      */
-    private function container(array $errorsConfig, InMemoryRepository $repo): ArrayContainer
+    private function build(array $errors): ErrorListener
     {
-        return new ArrayContainer([
-            'config' => ['errors' => $errorsConfig],
-            ErrorPageRepositoryInterface::class => $repo,
-        ]);
-    }
-
-    private function eventWith(int $status): MvcEvent
-    {
-        $response = new HttpResponse();
-        $response->setStatusCode($status);
-
-        $request = new HttpRequest();
-        $request->setUri('http://example.test/');
-
-        $event = new MvcEvent();
-        $event->setResponse($response);
-        $event->setRequest($request);
-        return $event;
+        return (new ErrorListenerFactory())(new InMemoryContainer([
+            'config'                            => ['errors' => $errors],
+            ErrorPageRepositoryInterface::class => self::repositoryWith404(),
+        ]));
     }
 }
