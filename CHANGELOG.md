@@ -15,8 +15,9 @@ for the BC breaks.
 - Requires PHP 8.3, 8.4 or 8.5. PHP 8.1 and 8.2 are no longer supported.
 - `contenir/errors` constraint is `^0.1 || ^2.0`.
 - Minimum Laminas versions raised to the first releases supporting PHP 8.3:
-  laminas-mvc 3.7, laminas-view 2.32, laminas-http 2.19,
-  laminas-eventmanager 3.11, laminas-servicemanager 3.22.
+  laminas-view 2.32, laminas-http 2.19, laminas-eventmanager 3.11 and
+  laminas-servicemanager 3.22; laminas-mvc 3.8, because 3.7 raises PHP 8.4
+  deprecations.
   `psr/container` is now required explicitly.
 - `Module` is `final`. Its constants, and those of `ConfigProvider` and
   `ErrorListener`, are typed.

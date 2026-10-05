@@ -14,7 +14,7 @@ rendering.
 
 - PHP 8.3, 8.4 or 8.5
 - `contenir/errors` `^0.1 || ^2.0`
-- `laminas/laminas-mvc` ^3.7, `laminas/laminas-view` ^2.32,
+- `laminas/laminas-mvc` ^3.8, `laminas/laminas-view` ^2.32,
   `laminas/laminas-http` ^2.19, `laminas/laminas-eventmanager` ^3.11,
   `laminas/laminas-servicemanager` ^3.22
 - `psr/container` ^1.1 or ^2.0, `psr/log` ^1.0, ^2.0 or ^3.0

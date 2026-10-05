@@ -4,7 +4,7 @@
 | --- | --- | --- |
 | PHP | ^8.1 | 8.3, 8.4 or 8.5 |
 | `contenir/errors` | ^0.1 | ^0.1 or ^2.0 |
-| `laminas/laminas-mvc` | ^3.4 | ^3.7 |
+| `laminas/laminas-mvc` | ^3.4 | ^3.8 |
 | `laminas/laminas-view` | ^2.0 | ^2.32 |
 | `laminas/laminas-http` | ^2.0 | ^2.19 |
 | `laminas/laminas-eventmanager` | ^3.0 | ^3.11 |
