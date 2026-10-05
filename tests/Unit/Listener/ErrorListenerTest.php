@@ -35,6 +35,7 @@ final class ErrorListenerTest extends TestCase
     public static function configuredStatusProvider(): array
     {
         return [
+            '400' => [400, 'Bad request'],
             '403' => [403, 'Forbidden'],
             '500' => [500, 'Oops'],
             '503' => [503, 'Down for maintenance'],

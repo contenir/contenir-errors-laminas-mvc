@@ -56,14 +56,14 @@ final class ErrorListenerFactoryTest extends TestCase
     }
 
     /**
-     * @return array<string, array{mixed, string}>
+     * @return array<string, array{mixed}>
      */
     public static function invalidLoggerProvider(): array
     {
         return [
-            'integer'      => [42, 'config[errors][logger] must be null'],
-            'empty string' => ['', 'config[errors][logger] must be null'],
-            'array'        => [['log.psr3'], 'config[errors][logger] must be null'],
+            'integer'      => [42],
+            'empty string' => [''],
+            'array'        => [['log.psr3']],
         ];
     }
 
@@ -206,6 +206,16 @@ final class ErrorListenerFactoryTest extends TestCase
     }
 
     #[Test]
+    public function readsAMissingAdminTitleAsAnEmptyString(): void
+    {
+        $event = self::eventWith(418);
+
+        self::buildWithoutRepository([418 => ['body' => '<p>x</p>']])($event);
+
+        static::assertSame('', self::variable($event, 'title'));
+    }
+
+    #[Test]
     public function readsMissingAdminFieldsAsEmptyStrings(): void
     {
         $event = self::eventWith(418);
@@ -217,10 +227,13 @@ final class ErrorListenerFactoryTest extends TestCase
 
     #[Test]
     #[DataProvider('invalidLoggerProvider')]
-    public function rejectsALoggerConfigOfTheWrongType(mixed $logger, string $message): void
+    public function rejectsALoggerConfigOfTheWrongType(mixed $logger): void
     {
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage($message);
+        $this->expectExceptionMessage(
+            'contenir/errors-laminas-mvc: config[errors][logger] must be null, a service ID string,'
+                . ' or a Psr\\Log\\LoggerInterface instance.',
+        );
 
         $this->build(['logger' => $logger]);
     }
