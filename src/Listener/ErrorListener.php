@@ -5,11 +5,14 @@ declare(strict_types=1);
 namespace Contenir\Errors\Laminas\Mvc\Listener;
 
 use Contenir\Errors\ErrorPageRepositoryInterface;
+use Laminas\Http\Request as HttpRequest;
 use Laminas\Http\Response as HttpResponse;
 use Laminas\Mvc\MvcEvent;
 use Laminas\View\Model\ViewModel;
 use Psr\Log\LoggerInterface;
 use Throwable;
+
+use function sprintf;
 
 /**
  * Swaps the result ViewModel with admin-authored content for any 4xx/5xx
@@ -26,10 +29,12 @@ use Throwable;
  * Logging is independent of admin overrides: every intercepted 4xx/5xx is
  * surfaced to the optional PSR-3 logger so Sites can observe error volume
  * regardless of whether they have authored a custom page.
+ *
+ * @api
  */
-final class ErrorListener
+final readonly class ErrorListener
 {
-    public const DEFAULT_VIEW_TEMPLATE = 'contenir/errors/fault';
+    public const string DEFAULT_VIEW_TEMPLATE = 'contenir/errors/fault';
 
     /**
      * Event name used to signal page-cache opt-out. Matches the
@@ -38,13 +43,62 @@ final class ErrorListener
      * the cache adapter; if cache-laminas-mvc isn't installed, firing
      * the event is a harmless no-op.
      */
-    private const PAGECACHE_DISABLE_EVENT = 'pagecache.disable';
+    private const string PAGECACHE_DISABLE_EVENT = 'pagecache.disable';
 
     public function __construct(
-        private readonly ErrorPageRepositoryInterface $repository,
-        private readonly string $viewTemplate = self::DEFAULT_VIEW_TEMPLATE,
-        private readonly ?LoggerInterface $logger = null,
-    ) {
+        private ErrorPageRepositoryInterface $repository,
+        private string $viewTemplate = self::DEFAULT_VIEW_TEMPLATE,
+        private ?LoggerInterface $logger = null,
+    ) {}
+
+    /**
+     * @return array{exception?: Throwable}
+     */
+    private static function exceptionContext(mixed $exception): array
+    {
+        return $exception instanceof Throwable ? ['exception' => $exception] : [];
+    }
+
+    private static function extractUri(MvcEvent $event): string
+    {
+        $request = $event->getRequest();
+
+        return $request instanceof HttpRequest ? $request->getUri()->toString() : '';
+    }
+
+    private static function viewModelOf(mixed $result): ViewModel
+    {
+        return $result instanceof ViewModel ? $result : new ViewModel();
+    }
+
+    /**
+     * Tell any listening page-cache that this 4xx/5xx response must not
+     * be stored. cache-laminas-mvc's CacheStrategy listens to this event
+     * on the same identifier(s) it uses for dispatch/finish; on receipt
+     * it flips its disabled flag and onFinish skips storage.
+     */
+    private function disablePageCache(MvcEvent $event): void
+    {
+        $event->getApplication()?->getEventManager()->trigger(self::PAGECACHE_DISABLE_EVENT);
+    }
+
+    private function log(MvcEvent $event, int $status): void
+    {
+        if (null === $this->logger) {
+            return;
+        }
+
+        $uri = self::extractUri($event);
+
+        if ($status >= 500) {
+            $this->logger->error(
+                sprintf('HTTP %d at %s', $status, $uri),
+                self::exceptionContext($event->getParam('exception')),
+            );
+            return;
+        }
+
+        $this->logger->info(sprintf('HTTP %d at %s', $status, $uri));
     }
 
     public function __invoke(MvcEvent $event): void
@@ -63,12 +117,11 @@ final class ErrorListener
         $this->log($event, $status);
 
         $page = $this->repository->get($status);
-        if ($page === null || $page->isEmpty()) {
+        if (null === $page || $page->isEmpty()) {
             return;
         }
 
-        $result = $event->getResult();
-        $viewModel = $result instanceof ViewModel ? $result : new ViewModel();
+        $viewModel = self::viewModelOf($event->getResult());
 
         $viewModel->setTemplate($this->viewTemplate);
         $viewModel->setVariables([
@@ -80,43 +133,5 @@ final class ErrorListener
 
         $event->setResult($viewModel);
         $event->setViewModel($viewModel);
-    }
-
-    /**
-     * Tell any listening page-cache that this 4xx/5xx response must not
-     * be stored. cache-laminas-mvc's CacheStrategy listens to this event
-     * on the same identifier(s) it uses for dispatch/finish; on receipt
-     * it flips its disabled flag and onFinish skips storage.
-     */
-    private function disablePageCache(MvcEvent $event): void
-    {
-        $event->getApplication()?->getEventManager()->trigger(self::PAGECACHE_DISABLE_EVENT);
-    }
-
-    private function log(MvcEvent $event, int $status): void
-    {
-        if ($this->logger === null) {
-            return;
-        }
-
-        $uri = self::extractUri($event);
-
-        if ($status >= 500) {
-            $exception = $event->getParam('exception');
-            $context   = $exception instanceof Throwable ? ['exception' => $exception] : [];
-            $this->logger->error(sprintf('HTTP %d at %s', $status, $uri), $context);
-            return;
-        }
-
-        $this->logger->info(sprintf('HTTP %d at %s', $status, $uri));
-    }
-
-    private static function extractUri(MvcEvent $event): string
-    {
-        $request = $event->getRequest();
-        if ($request !== null && method_exists($request, 'getUri')) {
-            return (string) $request->getUri();
-        }
-        return '';
     }
 }

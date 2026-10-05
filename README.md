@@ -1,76 +1,161 @@
 # contenir/errors-laminas-mvc
 
+[![Continuous Integration](https://github.com/contenir/errors-laminas-mvc/actions/workflows/continuous-integration.yml/badge.svg)](https://github.com/contenir/errors-laminas-mvc/actions/workflows/continuous-integration.yml)
+[![codecov](https://codecov.io/gh/contenir/errors-laminas-mvc/graph/badge.svg)](https://codecov.io/gh/contenir/errors-laminas-mvc)
+
 Laminas MVC adapter for [`contenir/errors`](https://github.com/contenir/errors).
 
 Replaces the framework's default 4xx/5xx rendering with admin-authored
-per-status pages when configured. Non-invasive on first install — when
-the admin hasn't authored a page for a given status, the framework's
-default rendering proceeds unchanged.
+per-status pages, falling back to built-in pages for 403, 404 and 500.
+Any other status the admin has not authored keeps the framework's default
+rendering.
 
-## Install
+## Requirements
+
+- PHP 8.3, 8.4 or 8.5
+- `contenir/errors` `^0.1 || ^2.0`
+- `laminas/laminas-mvc` ^3.7, `laminas/laminas-view` ^2.32,
+  `laminas/laminas-http` ^2.19, `laminas/laminas-eventmanager` ^3.11,
+  `laminas/laminas-servicemanager` ^3.22
+- `psr/container` ^1.1 or ^2.0, `psr/log` ^1.0, ^2.0 or ^3.0
+
+The 0.x releases, which support PHP 8.1, remain available from the `0.x`
+branch and `v0.*` tags; see [UPGRADE-2.0.md](UPGRADE-2.0.md).
+
+## Installation
 
 ```bash
 composer require contenir/errors-laminas-mvc
 ```
 
-The Module is auto-registered by `laminas/laminas-component-installer`.
+`laminas/laminas-component-installer` registers the module
+`Contenir\Errors\Laminas\Mvc` for you. Without it, add that name to your
+application's module list.
 
-## Configure
+## Configuration
 
-Point the package at a shared error-pages file (the same path the admin
-writes to) and optionally wire a PSR-3 logger:
+Everything lives under the `errors` key. All of it is optional.
 
 ```php
 // config/autoload/errors.global.php
-
 return [
     'errors' => [
-        'file'          => realpath(__DIR__ . '/../..') . '/configs/errors.local.php',
-        'view_template' => 'contenir/errors/fault',  // override to use a Site-owned template
-        'logger'        => 'log.psr3',                // optional PSR-3 service ID
+        'view_template' => 'contenir/errors/fault', // the default
+        'logger'        => 'log.psr3',              // optional PSR-3 logger
     ],
 ];
 ```
 
-`file` is required. `view_template` defaults to the package's shipped
-`contenir/errors/fault.phtml` (uses the `.fault` BEM block, no scripts,
-`<meta name="robots" content="noindex">`, single "Return home" link).
-`logger` may be `null`, a service ID resolvable from the container, or a
-`Psr\Log\LoggerInterface` instance.
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `pages` | `[]` | Admin-authored pages, keyed by status: `[404 => ['title' => '…', 'body' => '…']]` |
+| `view_template` | `contenir/errors/fault` | Template rendered for an intercepted error. A missing, `null` or empty value uses the default. |
+| `logger` | `null` | `null`, a service name resolving to a `Psr\Log\LoggerInterface`, or a logger instance. Anything else throws a `RuntimeException` when the listener is built. |
+
+### Where the pages come from
+
+The admin side of the CMS writes pages with
+`Contenir\Errors\Repository\FileRepository` (from `contenir/errors`) to a
+file such as `config/autoload/errors.local.php`:
+
+```php
+return [
+    'errors' => [
+        'pages' => [
+            404 => ['title' => 'Page not found', 'body' => '<p>Try the <a href="/">homepage</a>.</p>'],
+        ],
+    ],
+];
+```
+
+Laminas merges that file into the application config at boot, and
+`ErrorListenerFactory` builds an in-memory repository from it:
+
+1. The built-in pages in `ConfigProvider::DEFAULT_PAGES` (403, 404, 500)
+   are seeded first.
+2. Each entry in `errors.pages` replaces the default for its status. Rows
+   whose key is not an integer, or whose value is not an array, are
+   ignored. A missing or non-scalar `title`/`body` reads as `''`.
+
+To use your own storage instead, register a service named
+`Contenir\Errors\ErrorPageRepositoryInterface`; the factory then uses it
+and ignores both the defaults and `errors.pages`.
 
 ## How it works
 
-The `ErrorListener` attaches at `MvcEvent::EVENT_RENDER` and
-`EVENT_RENDER_ERROR` at priority `100`. By the time RENDER fires, the
-response status is already settled (RouteNotFoundStrategy has set 404,
-ExceptionStrategy has set 500, or a controller has called
-`setStatusCode(403)`). The listener:
+`Module::onBootstrap()` pulls `Listener\ErrorListener` from the service
+manager and attaches it to two events:
 
-1. Logs the 4xx/5xx via the optional PSR-3 logger (`info()` for 4xx,
-   `error()` for 5xx, with the exception in context if available).
-2. If the repository has a non-empty page for the status, swaps the
-   result `ViewModel` template + variables (`status`, `title`, `body`)
-   and marks it terminal so the layout is bypassed.
-3. Otherwise leaves the existing render path untouched.
+| Event | Priority | Why |
+| --- | --- | --- |
+| `MvcEvent::EVENT_RENDER` | `Module::RENDER_PRIORITY` (100) | Dispatch-time statuses (404 from the route-not-found strategy, a controller's 403) are already set. |
+| `MvcEvent::EVENT_RENDER_ERROR` | `Module::RENDER_ERROR_PRIORITY` (-100) | Runs after Laminas's `ExceptionStrategy` (priority 1) has set the 500. |
 
-## Override the view
+For an HTTP response with a status of 400 or more, the listener:
 
-To brand the page beyond what's possible in the body field, set
-`errors.view_template` to your own template name:
+1. Triggers `pagecache.disable` on the application's event manager, so
+   [`contenir/cache-laminas-mvc`](https://github.com/contenir/cache-laminas-mvc)
+   does not store the error response. Without that package the event is a
+   no-op.
+2. Logs the request through the optional logger: `info()` for 4xx,
+   `error()` for 5xx with the event's `exception` parameter in the context
+   when there is one. The message is `HTTP <status> at <uri>`.
+3. If the repository has a non-empty page for the status, sets the
+   template and the variables `status`, `title` and `body` on the result
+   `ViewModel` (creating one if the result is not a `ViewModel`), marks it
+   terminal so the layout is skipped, and sets it as the event's view
+   model.
+
+Statuses below 400 and non-HTTP responses are left alone.
+
+You can also wire the listener yourself:
 
 ```php
-'errors' => [
-    'view_template' => 'site/error-page',
-],
+use Contenir\Errors\Laminas\Mvc\Listener\ErrorListener;
+use Contenir\Errors\Laminas\Mvc\Module;
+
+$listener = new ErrorListener($repository, 'site/error-page', $logger);
+(new Module())->attachListener($application->getEventManager(), $listener);
 ```
 
-Your template receives:
+`ConfigProvider` returns the same configuration as `Module::getConfig()`
+(`service_manager`, `errors` defaults and `view_manager`), split into
+`getDependencies()`, `getErrorsDefaults()` and `getViewManagerConfig()`.
 
-| Variable  | Type     | Notes                                               |
-| --------- | -------- | --------------------------------------------------- |
-| `$status` | `int`    | HTTP status code (e.g. 404)                         |
-| `$title`  | `string` | Plain text written by the admin                     |
-| `$body`   | `string` | Sanitized HTML fragment (inline only) — render raw  |
+## The view
 
-The body is *trusted* — sanitization is the writer's responsibility (see
-the admin-side wiring in the consuming CMS). Render with `<?= $body ?>`.
+The shipped `contenir/errors/fault` template is self-contained: no layout,
+inline styles, system fonts, `<meta name="robots" content="noindex">`, the
+`.fault` BEM block (`.fault--<status>` on `<body>`) and a single "Return
+home" link. The title is escaped; the body is rendered raw.
+
+To brand the page beyond the body field, point `errors.view_template` at
+your own template. It receives:
+
+| Variable | Type | Notes |
+| --- | --- | --- |
+| `$status` | `int` | HTTP status code (e.g. 404) |
+| `$title` | `string` | Plain text written by the admin |
+| `$body` | `string` | Sanitized HTML fragment (inline only); render raw |
+
+The body is *trusted*: sanitization is the writer's responsibility (see
+the admin-side wiring in the consuming CMS). Render it with `<?= $body ?>`.
+
+## Development
+
+The QA toolchain is [php-db/phpdb-qa-tools](https://github.com/php-db/phpdb-qa-tools).
+[Mago](https://mago.carthage.software/) is a standalone binary, installed
+separately (`brew install mago`).
+
+```bash
+composer check             # everything below
+composer cs-check          # mago format --check && mago lint
+composer static-analysis   # mago analyze
+composer test              # unit suite: listener, factory, module and config, collaborators doubled
+composer test-integration  # integration suite: real event manager, service manager and view renderer
+composer test-coverage     # both suites, clover.xml for Codecov
+```
+
+## License
+
+MIT. See [LICENSE](LICENSE).

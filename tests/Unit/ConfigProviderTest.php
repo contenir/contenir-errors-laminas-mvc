@@ -7,79 +7,81 @@ namespace Contenir\Errors\Laminas\Mvc\Tests\Unit;
 use Contenir\Errors\Laminas\Mvc\ConfigProvider;
 use Contenir\Errors\Laminas\Mvc\Factory\ErrorListenerFactory;
 use Contenir\Errors\Laminas\Mvc\Listener\ErrorListener;
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
+use function dirname;
+use function realpath;
+
+#[CoversClass(ConfigProvider::class)]
 #[Group('unit')]
 final class ConfigProviderTest extends TestCase
 {
-    public function testInvokeReturnsServiceManagerErrorsAndViewManagerKeys(): void
+    /**
+     * @return array<string, array{int}>
+     */
+    public static function defaultStatusProvider(): array
     {
-        $config = (new ConfigProvider())();
-
-        self::assertArrayHasKey('service_manager', $config);
-        self::assertArrayHasKey('errors', $config);
-        self::assertArrayHasKey('view_manager', $config);
+        return [
+            '403' => [403],
+            '404' => [404],
+            '500' => [500],
+        ];
     }
 
-    public function testRegistersListenerFactory(): void
+    #[Test]
+    public function errorDefaultsUseTheShippedTemplateAndNoLogger(): void
     {
-        $deps = (new ConfigProvider())->getDependencies();
-
-        self::assertSame(
-            ErrorListenerFactory::class,
-            $deps['factories'][ErrorListener::class]
+        static::assertSame(
+            ['view_template' => 'contenir/errors/fault', 'logger' => null],
+            (new ConfigProvider())->getErrorsDefaults(),
         );
     }
 
-    public function testErrorsDefaultsHaveExpectedKeys(): void
+    #[Test]
+    public function invokeCombinesDependenciesErrorDefaultsAndViewManagerConfig(): void
     {
-        $defaults = (new ConfigProvider())->getErrorsDefaults();
+        $provider = new ConfigProvider();
 
-        self::assertArrayHasKey('view_template', $defaults);
-        self::assertArrayHasKey('logger', $defaults);
-    }
-
-    public function testErrorsDefaultsAreUnconfiguredExceptViewTemplate(): void
-    {
-        $defaults = (new ConfigProvider())->getErrorsDefaults();
-
-        self::assertNull($defaults['logger']);
-        self::assertSame('contenir/errors/fault', $defaults['view_template']);
-    }
-
-    public function testViewManagerConfigPointsAtShippedTemplateDirectory(): void
-    {
-        $vm = (new ConfigProvider())->getViewManagerConfig();
-
-        self::assertArrayHasKey('template_path_stack', $vm);
-        self::assertCount(1, $vm['template_path_stack']);
-        self::assertDirectoryExists($vm['template_path_stack'][0]);
-        self::assertFileExists($vm['template_path_stack'][0] . '/contenir/errors/fault.phtml');
-    }
-
-    public function testDefaultViewTemplateConstantMatchesDefaults(): void
-    {
-        self::assertSame(
-            ConfigProvider::DEFAULT_VIEW_TEMPLATE,
-            (new ConfigProvider())->getErrorsDefaults()['view_template']
+        static::assertSame(
+            [
+                'service_manager' => $provider->getDependencies(),
+                'errors'          => $provider->getErrorsDefaults(),
+                'view_manager'    => $provider->getViewManagerConfig(),
+            ],
+            $provider(),
         );
     }
 
-    public function testDefaultPagesCoverCommonHttpStatuses(): void
+    #[Test]
+    public function registersTheListenerFactory(): void
     {
-        self::assertArrayHasKey(403, ConfigProvider::DEFAULT_PAGES);
-        self::assertArrayHasKey(404, ConfigProvider::DEFAULT_PAGES);
-        self::assertArrayHasKey(500, ConfigProvider::DEFAULT_PAGES);
+        static::assertSame(
+            ['factories' => [ErrorListener::class => ErrorListenerFactory::class]],
+            (new ConfigProvider())->getDependencies(),
+        );
     }
 
-    public function testEveryDefaultPageHasNonEmptyTitleAndBody(): void
+    #[Test]
+    #[DataProvider('defaultStatusProvider')]
+    public function shipsANonEmptyDefaultPageForCommonStatuses(int $status): void
     {
-        foreach (ConfigProvider::DEFAULT_PAGES as $row) {
-            self::assertArrayHasKey('title', $row);
-            self::assertArrayHasKey('body', $row);
-            self::assertNotSame('', $row['title']);
-            self::assertNotSame('', $row['body']);
-        }
+        $page = ConfigProvider::DEFAULT_PAGES[$status] ?? ['title' => '', 'body' => ''];
+
+        static::assertNotContains('', [$page['title'], $page['body']]);
+    }
+
+    #[Test]
+    public function viewManagerConfigPointsAtTheShippedViewDirectory(): void
+    {
+        $stack = (new ConfigProvider())->getViewManagerConfig()['template_path_stack'] ?? [];
+
+        static::assertSame(
+            [realpath(dirname(__DIR__, levels: 2) . '/view')],
+            [realpath($stack[0] ?? '')],
+        );
     }
 }

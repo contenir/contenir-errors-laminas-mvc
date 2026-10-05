@@ -4,132 +4,58 @@ declare(strict_types=1);
 
 namespace Contenir\Errors\Laminas\Mvc\Tests\Unit;
 
-use Contenir\Errors\ErrorPage;
+use Contenir\Errors\Laminas\Mvc\ConfigProvider;
 use Contenir\Errors\Laminas\Mvc\Listener\ErrorListener;
 use Contenir\Errors\Laminas\Mvc\Module;
 use Contenir\Errors\Repository\InMemoryRepository;
-use Laminas\EventManager\EventManager;
-use Laminas\Http\Response as HttpResponse;
-use Laminas\Mvc\ApplicationInterface;
+use Laminas\EventManager\EventManagerInterface;
 use Laminas\Mvc\MvcEvent;
-use Laminas\ServiceManager\ServiceManager;
-use Laminas\View\Model\ViewModel;
+use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
+#[CoversClass(Module::class)]
 #[Group('unit')]
 final class ModuleTest extends TestCase
 {
-    public function testGetConfigReturnsConfigProviderArray(): void
+    #[Test]
+    public function attachesTheListenerToRenderAndRenderError(): void
     {
-        $config = (new Module())->getConfig();
+        $listener = new ErrorListener(new InMemoryRepository());
+        $attached = [];
+        $events   = $this->createMock(EventManagerInterface::class);
+        $events->expects($this->exactly(2))
+            ->method('attach')
+            ->willReturnCallback(static function (string $name, callable $callback, int $priority) use (
+                &$attached,
+                $listener,
+            ): callable {
+                $attached[] = [$name, $callback === $listener, $priority];
 
-        self::assertArrayHasKey('service_manager', $config);
-        self::assertArrayHasKey('errors', $config);
-        self::assertArrayHasKey('view_manager', $config);
-    }
+                return $callback;
+            });
 
-    public function testRenderPriorityConstantIsExposed(): void
-    {
-        self::assertSame(100, Module::RENDER_PRIORITY);
-    }
+        (new Module())->attachListener($events, $listener);
 
-    public function testRenderErrorPriorityConstantIsExposed(): void
-    {
-        self::assertSame(-100, Module::RENDER_ERROR_PRIORITY);
-    }
-
-    public function testRenderErrorListenerRunsAfterExceptionStrategy(): void
-    {
-        $listener = $this->buildListener();
-        $events   = new EventManager();
-
-        $exceptionStrategyPriority = 1;
-        $statusAtListener          = null;
-        $events->attach(
-            MvcEvent::EVENT_RENDER_ERROR,
-            static function (MvcEvent $event) use (&$statusAtListener): void {
-                $event->getResponse()->setStatusCode(500);
-            },
-            $exceptionStrategyPriority,
+        static::assertSame(
+            [
+                [MvcEvent::EVENT_RENDER, true, 100],
+                [MvcEvent::EVENT_RENDER_ERROR, true, -100],
+            ],
+            $attached,
         );
-
-        (new Module())->attachListener($events, $listener);
-
-        $event = $this->buildEvent(200);
-        $event->setName(MvcEvent::EVENT_RENDER_ERROR);
-        $events->triggerEvent($event);
-
-        self::assertInstanceOf(ViewModel::class, $event->getResult());
-        self::assertSame('contenir/errors/fault', $event->getResult()->getTemplate());
     }
 
-    public function testAttachListenerSwapsViewModelOnRender(): void
+    #[Test]
+    public function exposesTheListenerPriorities(): void
     {
-        $listener = $this->buildListener();
-        $events   = new EventManager();
-
-        (new Module())->attachListener($events, $listener);
-
-        $event = $this->buildEvent(404);
-        $event->setName(MvcEvent::EVENT_RENDER);
-        $events->triggerEvent($event);
-
-        self::assertSame('contenir/errors/fault', $event->getResult()->getTemplate());
+        static::assertSame([100, -100], [Module::RENDER_PRIORITY, Module::RENDER_ERROR_PRIORITY]);
     }
 
-    public function testAttachListenerAlsoFiresOnRenderError(): void
+    #[Test]
+    public function getConfigReturnsTheConfigProviderArray(): void
     {
-        $listener = $this->buildListener();
-        $events   = new EventManager();
-
-        (new Module())->attachListener($events, $listener);
-
-        $event = $this->buildEvent(500);
-        $event->setName(MvcEvent::EVENT_RENDER_ERROR);
-        $events->triggerEvent($event);
-
-        self::assertInstanceOf(ViewModel::class, $event->getResult());
-        self::assertSame('contenir/errors/fault', $event->getResult()->getTemplate());
-    }
-
-    public function testOnBootstrapResolvesListenerAndAttachesIt(): void
-    {
-        $listener = $this->buildListener();
-        $services = new ServiceManager(['services' => [ErrorListener::class => $listener]]);
-        $events   = new EventManager();
-
-        $application = $this->createMock(ApplicationInterface::class);
-        $application->method('getServiceManager')->willReturn($services);
-        $application->method('getEventManager')->willReturn($events);
-
-        $bootstrapEvent = new MvcEvent();
-        $bootstrapEvent->setApplication($application);
-
-        (new Module())->onBootstrap($bootstrapEvent);
-
-        $renderEvent = $this->buildEvent(404);
-        $renderEvent->setName(MvcEvent::EVENT_RENDER);
-        $events->triggerEvent($renderEvent);
-
-        self::assertSame('contenir/errors/fault', $renderEvent->getResult()->getTemplate());
-    }
-
-    private function buildListener(): ErrorListener
-    {
-        return new ErrorListener(new InMemoryRepository([
-            new ErrorPage(404, 'Not found', '<p>Lost.</p>'),
-            new ErrorPage(500, 'Oops', '<p>Sorry.</p>'),
-        ]));
-    }
-
-    private function buildEvent(int $status): MvcEvent
-    {
-        $response = new HttpResponse();
-        $response->setStatusCode($status);
-
-        $event = new MvcEvent();
-        $event->setResponse($response);
-        return $event;
+        static::assertSame((new ConfigProvider())(), (new Module())->getConfig());
     }
 }

@@ -7,6 +7,7 @@ namespace Contenir\Errors\Laminas\Mvc;
 use Contenir\Errors\Laminas\Mvc\Listener\ErrorListener;
 use Laminas\EventManager\EventManagerInterface;
 use Laminas\Mvc\MvcEvent;
+use Psr\Container\ContainerExceptionInterface;
 
 /**
  * Laminas MVC entry point.
@@ -30,11 +31,19 @@ use Laminas\Mvc\MvcEvent;
  *    200, and bail. We therefore attach at -100 — below ExceptionStrategy
  *    but above DefaultRenderingStrategy — so the status is 500 by the time
  *    we look.
+ *
+ * @api
  */
-class Module
+final readonly class Module
 {
-    public const RENDER_PRIORITY       = 100;
-    public const RENDER_ERROR_PRIORITY = -100;
+    public const int RENDER_PRIORITY       = 100;
+    public const int RENDER_ERROR_PRIORITY = -100;
+
+    public function attachListener(EventManagerInterface $events, ErrorListener $listener): void
+    {
+        $events->attach(MvcEvent::EVENT_RENDER, $listener, self::RENDER_PRIORITY);
+        $events->attach(MvcEvent::EVENT_RENDER_ERROR, $listener, self::RENDER_ERROR_PRIORITY);
+    }
 
     /**
      * @return array<string, mixed>
@@ -44,16 +53,13 @@ class Module
         return (new ConfigProvider())();
     }
 
+    /**
+     * @throws ContainerExceptionInterface
+     */
     public function onBootstrap(MvcEvent $event): void
     {
         $application = $event->getApplication();
         $listener    = $application->getServiceManager()->get(ErrorListener::class);
         $this->attachListener($application->getEventManager(), $listener);
-    }
-
-    public function attachListener(EventManagerInterface $events, ErrorListener $listener): void
-    {
-        $events->attach(MvcEvent::EVENT_RENDER, $listener, self::RENDER_PRIORITY);
-        $events->attach(MvcEvent::EVENT_RENDER_ERROR, $listener, self::RENDER_ERROR_PRIORITY);
     }
 }
