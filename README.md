@@ -1,9 +1,11 @@
-# contenir/errors-laminas-mvc
+# contenir/contenir-errors-laminas-mvc
 
-[![Continuous Integration](https://github.com/contenir/errors-laminas-mvc/actions/workflows/continuous-integration.yml/badge.svg)](https://github.com/contenir/errors-laminas-mvc/actions/workflows/continuous-integration.yml)
-[![codecov](https://codecov.io/gh/contenir/errors-laminas-mvc/graph/badge.svg)](https://codecov.io/gh/contenir/errors-laminas-mvc)
+Formerly `contenir/errors-laminas-mvc`; the old package is abandoned in favour of this one.
 
-Laminas MVC adapter for [`contenir/errors`](https://github.com/contenir/errors).
+[![Continuous Integration](https://github.com/contenir/contenir-errors-laminas-mvc/actions/workflows/continuous-integration.yml/badge.svg)](https://github.com/contenir/contenir-errors-laminas-mvc/actions/workflows/continuous-integration.yml)
+[![codecov](https://codecov.io/gh/contenir/contenir-errors-laminas-mvc/graph/badge.svg)](https://codecov.io/gh/contenir/contenir-errors-laminas-mvc)
+
+Laminas MVC adapter for [`contenir/contenir-errors`](https://github.com/contenir/contenir-errors).
 
 Replaces the framework's default 4xx/5xx rendering with admin-authored
 per-status pages, falling back to built-in pages for 403, 404 and 500.
@@ -13,7 +15,7 @@ rendering.
 ## Requirements
 
 - PHP 8.3, 8.4 or 8.5
-- `contenir/errors` `^0.1 || ^2.0`
+- `contenir/contenir-errors` `^2.1`
 - `laminas/laminas-mvc` ^3.8, `laminas/laminas-view` ^2.32,
   `laminas/laminas-http` ^2.19, `laminas/laminas-eventmanager` ^3.11,
   `laminas/laminas-servicemanager` ^3.22
@@ -25,7 +27,7 @@ branch and `v0.*` tags; see [UPGRADE-2.0.md](UPGRADE-2.0.md).
 ## Installation
 
 ```bash
-composer require contenir/errors-laminas-mvc
+composer require contenir/contenir-errors-laminas-mvc
 ```
 
 `laminas/laminas-component-installer` registers the module
@@ -55,7 +57,7 @@ return [
 ### Where the pages come from
 
 The admin side of the CMS writes pages with
-`Contenir\Errors\Repository\FileRepository` (from `contenir/errors`) to a
+`Contenir\Errors\Repository\FileRepository` (from `contenir/contenir-errors`) to a
 file such as `config/autoload/errors.local.php`:
 
 ```php
@@ -94,7 +96,7 @@ manager and attaches it to two events:
 For an HTTP response with a status of 400 or more, the listener:
 
 1. Triggers `pagecache.disable` on the application's event manager, so
-   [`contenir/cache-laminas-mvc`](https://github.com/contenir/cache-laminas-mvc)
+   [`contenir/contenir-cache-laminas-mvc`](https://github.com/contenir/contenir-cache-laminas-mvc)
    does not store the error response. Without that package the event is a
    no-op.
 2. Logs the request through the optional logger: `info()` for 4xx,
