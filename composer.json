@@ -1,11 +1,11 @@
 {
-  "name": "contenir/errors-laminas-mvc",
-  "description": "Laminas MVC adapter for contenir/errors — swaps the default error rendering with admin-authored per-status pages.",
+  "name": "contenir/contenir-errors-laminas-mvc",
+  "description": "Laminas MVC adapter for contenir/contenir-errors — swaps the default error rendering with admin-authored per-status pages.",
   "type": "library",
   "license": "MIT",
   "require": {
     "php": "~8.3.0 || ~8.4.0 || ~8.5.0",
-    "contenir/errors": "^0.1 || ^2.0",
+    "contenir/contenir-errors": "^2.1",
     "laminas/laminas-eventmanager": "^3.11",
     "laminas/laminas-http": "^2.19",
     "laminas/laminas-mvc": "^3.8",
@@ -18,6 +18,9 @@
     "infection/infection": "^0.34.1",
     "php-db/phpdb-qa-tools": "0.1.x-dev",
     "phpunit/phpunit": "^11.5.42"
+  },
+  "replace": {
+    "contenir/errors-laminas-mvc": "self.version"
   },
   "autoload": {
     "psr-4": {
@@ -62,7 +65,7 @@
   },
   "extra": {
     "branch-alias": {
-      "dev-main": "2.0.x-dev"
+      "dev-main": "2.1.x-dev"
     },
     "laminas": {
       "module": "Contenir\\Errors\\Laminas\\Mvc"

@@ -4,7 +4,16 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [2.1.0] - Unreleased
+
+### Changed
+
+- Renamed from `contenir/errors-laminas-mvc` to
+  `contenir/contenir-errors-laminas-mvc`. The package declares `replace` for
+  the old name; require `contenir/contenir-errors-laminas-mvc` instead. See
+  [UPGRADE-2.0.md](UPGRADE-2.0.md).
+- Requires `contenir/contenir-errors` `^2.1`, the renamed `contenir/errors`,
+  in place of `contenir/errors` `^0.1 || ^2.0`.
 
 ### Added
 
