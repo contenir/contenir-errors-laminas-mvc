@@ -12,6 +12,8 @@ for the BC breaks.
 
 ### Changed
 
+- `LICENSE` names Contenir as the copyright holder, in line with the other
+  Contenir packages, and uses the standard MIT wording.
 - Requires PHP 8.3, 8.4 or 8.5. PHP 8.1 and 8.2 are no longer supported.
 - `contenir/errors` constraint is `^0.1 || ^2.0`.
 - Minimum Laminas versions raised to the first releases supporting PHP 8.3:
