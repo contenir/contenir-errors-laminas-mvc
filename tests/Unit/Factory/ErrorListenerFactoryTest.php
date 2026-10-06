@@ -231,7 +231,7 @@ final class ErrorListenerFactoryTest extends TestCase
     {
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage(
-            'contenir/errors-laminas-mvc: config[errors][logger] must be null, a service ID string,'
+            'contenir/contenir-errors-laminas-mvc: config[errors][logger] must be null, a service ID string,'
                 . ' or a Psr\\Log\\LoggerInterface instance.',
         );
 
