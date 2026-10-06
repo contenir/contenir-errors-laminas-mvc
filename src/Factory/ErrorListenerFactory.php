@@ -47,7 +47,7 @@ final readonly class ErrorListenerFactory
     {
         if (! $service instanceof LoggerInterface) {
             throw new RuntimeException(sprintf(
-                'contenir/errors-laminas-mvc: logger service "%s" must implement Psr\Log\LoggerInterface.',
+                'contenir/contenir-errors-laminas-mvc: logger service "%s" must implement Psr\Log\LoggerInterface.',
                 $id,
             ));
         }
@@ -89,7 +89,7 @@ final readonly class ErrorListenerFactory
         }
 
         throw new RuntimeException(
-            'contenir/errors-laminas-mvc: config[errors][logger] must be null, a service ID string,'
+            'contenir/contenir-errors-laminas-mvc: config[errors][logger] must be null, a service ID string,'
                 . ' or a Psr\Log\LoggerInterface instance.',
         );
     }
