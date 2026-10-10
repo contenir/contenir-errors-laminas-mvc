@@ -14,7 +14,7 @@ namespace Contenir\Errors\Laminas\Mvc;
  */
 final readonly class ConfigProvider
 {
-    public const string DEFAULT_VIEW_TEMPLATE = 'contenir/errors/fault';
+    public const string DEFAULT_VIEW_TEMPLATE = ErrorListenerOptions::DEFAULT_VIEW_TEMPLATE;
 
     /**
      * Built-in default pages used when no admin-authored content is
@@ -61,6 +61,7 @@ final readonly class ConfigProvider
         return [
             'view_template' => self::DEFAULT_VIEW_TEMPLATE,
             'logger'        => null,
+            'debug'         => false,
         ];
     }
 

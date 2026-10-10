@@ -22,7 +22,8 @@ rendering.
 - `psr/container` ^1.1 or ^2.0, `psr/log` ^1.0, ^2.0 or ^3.0
 
 The 0.x releases, which support PHP 8.1, remain available from the `0.x`
-branch and `v0.*` tags; see [UPGRADE-2.0.md](UPGRADE-2.0.md).
+branch and `v0.*` tags; see [UPGRADE-2.0.md](UPGRADE-2.0.md). For 2.x to 3.0, see
+[UPGRADE-3.0.md](UPGRADE-3.0.md).
 
 ## Installation
 
@@ -44,6 +45,7 @@ return [
     'errors' => [
         'view_template' => 'contenir/errors/fault', // the default
         'logger'        => 'log.psr3',              // optional PSR-3 logger
+        'debug'         => false,                   // true = leave error responses alone
     ],
 ];
 ```
@@ -53,6 +55,7 @@ return [
 | `pages` | `[]` | Admin-authored pages, keyed by status: `[404 => ['title' => '…', 'body' => '…']]` |
 | `view_template` | `contenir/errors/fault` | Template rendered for an intercepted error. A missing, `null` or empty value uses the default. |
 | `logger` | `null` | `null`, a service name resolving to a `Psr\Log\LoggerInterface`, or a logger instance. Anything else throws a `RuntimeException` when the listener is built. |
+| `debug` | `false` | When `true`, every 4xx/5xx is still logged but otherwise left to Laminas, so its own 404 and exception output (with the stack trace) render. Set it in development config only. Anything other than a boolean or `null` throws a `RuntimeException` when the listener is built. |
 
 ### Where the pages come from
 
@@ -102,7 +105,8 @@ For an HTTP response with a status of 400 or more, the listener:
 2. Logs the request through the optional logger: `info()` for 4xx,
    `error()` for 5xx with the event's `exception` parameter in the context
    when there is one. The message is `HTTP <status> at <uri>`.
-3. If the repository has a non-empty page for the status, sets the
+3. In debug mode, stops here and leaves the response to Laminas.
+4. If the repository has a non-empty page for the status, sets the
    template and the variables `status`, `title` and `body` on the result
    `ViewModel` (creating one if the result is not a `ViewModel`), marks it
    terminal so the layout is skipped, and sets it as the event's view
@@ -113,10 +117,15 @@ Statuses below 400 and non-HTTP responses are left alone.
 You can also wire the listener yourself:
 
 ```php
+use Contenir\Errors\Laminas\Mvc\ErrorListenerOptions;
 use Contenir\Errors\Laminas\Mvc\Listener\ErrorListener;
 use Contenir\Errors\Laminas\Mvc\Module;
 
-$listener = new ErrorListener($repository, 'site/error-page', $logger);
+$listener = new ErrorListener(
+    $repository,
+    $logger,
+    new ErrorListenerOptions(viewTemplate: 'site/error-page'),
+);
 (new Module())->attachListener($application->getEventManager(), $listener);
 ```
 

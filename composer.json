@@ -65,7 +65,7 @@
   },
   "extra": {
     "branch-alias": {
-      "dev-main": "2.1.x-dev"
+      "dev-main": "3.0.x-dev"
     },
     "laminas": {
       "module": "Contenir\\Errors\\Laminas\\Mvc"

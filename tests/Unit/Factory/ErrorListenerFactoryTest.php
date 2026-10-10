@@ -281,6 +281,16 @@ final class ErrorListenerFactoryTest extends TestCase
     }
 
     #[Test]
+    public function stepsAsideWhenDebugIsOn(): void
+    {
+        $event = self::eventWith(404);
+
+        $this->build(['debug' => true])($event);
+
+        static::assertNull($event->getResult());
+    }
+
+    #[Test]
     public function usesARegisteredRepositoryService(): void
     {
         $event = self::eventWith(404);
