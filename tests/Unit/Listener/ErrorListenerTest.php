@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Contenir\Errors\Laminas\Mvc\Tests\Unit\Listener;
 
 use Contenir\Errors\ErrorPage;
+use Contenir\Errors\Laminas\Mvc\ErrorListenerOptions;
 use Contenir\Errors\Laminas\Mvc\Listener\ErrorListener;
 use Contenir\Errors\Laminas\Mvc\Tests\Trait\MvcEventTrait;
 use Contenir\Errors\Repository\InMemoryRepository;
@@ -45,6 +46,17 @@ final class ErrorListenerTest extends TestCase
     /**
      * @return array<string, array{int}>
      */
+    public static function debugStatusProvider(): array
+    {
+        return [
+            '404' => [404],
+            '500' => [500],
+        ];
+    }
+
+    /**
+     * @return array<string, array{int}>
+     */
     public static function nonErrorStatusProvider(): array
     {
         return [
@@ -71,6 +83,11 @@ final class ErrorListenerTest extends TestCase
         $application->method('getEventManager')->willReturn($events);
 
         return $application;
+    }
+
+    private static function repositoryWithPageFor(int $status): InMemoryRepository
+    {
+        return new InMemoryRepository([new ErrorPage($status, 'Oops', '<p>Sorry.</p>')]);
     }
 
     #[Test]
@@ -276,13 +293,50 @@ final class ErrorListenerTest extends TestCase
     }
 
     #[Test]
+    #[DataProvider('debugStatusProvider')]
+    public function stepsAsideForEveryErrorInDebugMode(int $status): void
+    {
+        $event = self::eventWith($status);
+
+        (new ErrorListener(self::repositoryWithPageFor($status), options: new ErrorListenerOptions(debug: true)))(
+            $event,
+        );
+
+        static::assertNull($event->getResult());
+    }
+
+    #[Test]
+    public function stillAsksThePageCacheToSkipErrorsInDebugMode(): void
+    {
+        $events = $this->createMock(EventManagerInterface::class);
+        $events->expects($this->once())->method('trigger')->with('pagecache.disable');
+        $event = self::eventWith(500);
+        $event->setApplication(self::applicationWith($events));
+
+        (new ErrorListener(self::repositoryWithPageFor(500), options: new ErrorListenerOptions(debug: true)))($event);
+    }
+
+    #[Test]
+    public function stillLogsErrorsInDebugMode(): void
+    {
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('error')->with('HTTP 500 at http://example.test/', []);
+
+        (new ErrorListener(
+            self::repositoryWithPageFor(500),
+            logger: $logger,
+            options: new ErrorListenerOptions(debug: true),
+        ))(self::eventWith(500));
+    }
+
+    #[Test]
     public function usesTheConfiguredViewTemplate(): void
     {
         $event = self::eventWith(404);
 
         (new ErrorListener(
             repository: self::repositoryWith404(),
-            viewTemplate: 'site/custom-error',
+            options: new ErrorListenerOptions(viewTemplate: 'site/custom-error'),
         ))($event);
 
         $result = $event->getResult();

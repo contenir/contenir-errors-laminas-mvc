@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Contenir\Errors\Laminas\Mvc\Listener;
 
 use Contenir\Errors\ErrorPageRepositoryInterface;
+use Contenir\Errors\Laminas\Mvc\ErrorListenerOptions;
 use Laminas\Http\Request as HttpRequest;
 use Laminas\Http\Response as HttpResponse;
 use Laminas\Mvc\MvcEvent;
@@ -26,6 +27,12 @@ use function sprintf;
  * When no page is configured, the framework's default rendering proceeds
  * unchanged — the listener is non-invasive on first install.
  *
+ * In debug mode (config[errors][debug]) the listener still logs and disables
+ * the page cache, but otherwise leaves every error response alone, so
+ * Laminas's own RouteNotFoundStrategy and ExceptionStrategy output (the
+ * unmatched route, the exception and stack trace) reaches the browser while
+ * developing. This matches contenir/contenir-errors-mezzio's `debug` option.
+ *
  * Logging is independent of admin overrides: every intercepted 4xx/5xx is
  * surfaced to the optional PSR-3 logger so Sites can observe error volume
  * regardless of whether they have authored a custom page.
@@ -34,7 +41,7 @@ use function sprintf;
  */
 final readonly class ErrorListener
 {
-    public const string DEFAULT_VIEW_TEMPLATE = 'contenir/errors/fault';
+    public const string DEFAULT_VIEW_TEMPLATE = ErrorListenerOptions::DEFAULT_VIEW_TEMPLATE;
 
     /**
      * Event name used to signal page-cache opt-out. Matches the
@@ -47,8 +54,8 @@ final readonly class ErrorListener
 
     public function __construct(
         private ErrorPageRepositoryInterface $repository,
-        private string $viewTemplate = self::DEFAULT_VIEW_TEMPLATE,
         private ?LoggerInterface $logger = null,
+        private ErrorListenerOptions $options = new ErrorListenerOptions(),
     ) {}
 
     /**
@@ -116,6 +123,10 @@ final readonly class ErrorListener
         $this->disablePageCache($event);
         $this->log($event, $status);
 
+        if ($this->options->debug) {
+            return;
+        }
+
         $page = $this->repository->get($status);
         if (null === $page || $page->isEmpty()) {
             return;
@@ -123,7 +134,7 @@ final readonly class ErrorListener
 
         $viewModel = self::viewModelOf($event->getResult());
 
-        $viewModel->setTemplate($this->viewTemplate);
+        $viewModel->setTemplate($this->options->viewTemplate);
         $viewModel->setVariables([
             'status' => $status,
             'title'  => $page->title,

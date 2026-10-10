@@ -7,6 +7,7 @@ namespace Contenir\Errors\Laminas\Mvc\Factory;
 use Contenir\Errors\ErrorPage;
 use Contenir\Errors\ErrorPageRepositoryInterface;
 use Contenir\Errors\Laminas\Mvc\ConfigProvider;
+use Contenir\Errors\Laminas\Mvc\ErrorListenerOptions;
 use Contenir\Errors\Laminas\Mvc\Listener\ErrorListener;
 use Contenir\Errors\Repository\InMemoryRepository;
 use Psr\Container\ContainerExceptionInterface;
@@ -26,7 +27,7 @@ use const ARRAY_FILTER_USE_BOTH;
 
 /**
  * Builds the ErrorListener from config[errors] (view_template, logger,
- * pages) and an optional ErrorPageRepositoryInterface service.
+ * debug, pages) and an optional ErrorPageRepositoryInterface service.
  *
  * @api
  */
@@ -63,15 +64,6 @@ final readonly class ErrorListenerFactory
     private static function scalarString(mixed $value): string
     {
         return is_scalar($value) ? (string) $value : '';
-    }
-
-    /**
-     * A missing, null or empty template falls back to the package default,
-     * rather than handing the renderer a template named "".
-     */
-    private static function viewTemplate(mixed $template): string
-    {
-        return is_string($template) && '' !== $template ? $template : ConfigProvider::DEFAULT_VIEW_TEMPLATE;
     }
 
     /**
@@ -135,22 +127,21 @@ final readonly class ErrorListenerFactory
 
     /**
      * @throws ContainerExceptionInterface
-     * @throws RuntimeException When the logger config or service has the wrong type.
+     * @throws RuntimeException When the debug or logger config, or the logger service, has the wrong type.
      */
     public function __invoke(ContainerInterface $container): ErrorListener
     {
         $config = $container->has('config') ? self::arrayOrEmpty($container->get('config')) : [];
         $errors = self::arrayOrEmpty($config['errors'] ?? null)
         + [
-            'pages'         => null,
-            'view_template' => null,
-            'logger'        => null,
+            'pages'  => null,
+            'logger' => null,
         ];
 
         return new ErrorListener(
             repository: $this->resolveRepository($container, self::arrayOrEmpty($errors['pages'])),
-            viewTemplate: self::viewTemplate($errors['view_template']),
             logger: $this->resolveLogger($container, $errors['logger']),
+            options: ErrorListenerOptions::fromConfig($errors),
         );
     }
 }

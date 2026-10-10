@@ -33,10 +33,10 @@ final class ConfigProviderTest extends TestCase
     }
 
     #[Test]
-    public function errorDefaultsUseTheShippedTemplateAndNoLogger(): void
+    public function errorDefaultsUseTheShippedTemplateNoLoggerAndDebugOff(): void
     {
         static::assertSame(
-            ['view_template' => 'contenir/errors/fault', 'logger' => null],
+            ['view_template' => 'contenir/errors/fault', 'logger' => null, 'debug' => false],
             (new ConfigProvider())->getErrorsDefaults(),
         );
     }

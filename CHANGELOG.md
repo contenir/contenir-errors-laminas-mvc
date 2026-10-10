@@ -6,7 +6,23 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `config[errors][debug]` (default `false`), matching
+  `contenir/contenir-errors-mezzio`. When `true` the listener still logs and
+  disables the page cache, but leaves every 4xx/5xx response to Laminas, so
+  the unmatched route or the exception and stack trace render during
+  development. A value other than a boolean or `null` throws a
+  `RuntimeException` when the listener is built.
+- `ErrorListenerOptions`, holding the view template and debug flag, with
+  `fromConfig()` reading them from `config[errors]`.
+
 ### Changed
+
+- **BC break:** `ErrorListener`'s constructor is now
+  `(ErrorPageRepositoryInterface $repository, ?LoggerInterface $logger = null, ErrorListenerOptions $options = new ErrorListenerOptions())`.
+  The `$viewTemplate` argument moves into `ErrorListenerOptions`. See
+  [UPGRADE-3.0.md](UPGRADE-3.0.md).
 
 - Exception messages now name the package `contenir/contenir-errors-laminas-mvc` instead of its pre-rename name.
 
